@@ -5,6 +5,9 @@ on:
     - cron: '0 2 * * *'  # Runs daily at 02:00 UTC
   workflow_dispatch:     # Allows manual trigger
 
+permissions:
+  contents: write  # 🔑 REQUIRED to commit and push files
+
 jobs:
   sync-gists:
     runs-on: ubuntu-latest
@@ -21,24 +24,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GIST_SYNC_TOKEN }}
         run: |
-          # Install dependencies
-          npm install -g gh
+          # Install GitHub CLI
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh -y
 
           # Authenticate gh CLI
           echo "${GITHUB_TOKEN}" | gh auth login --with-token
 
-          # Fetch list of your public & secret Gists (up to 100)
-          gh gist list --limit 100 > gists.txt
-
-          # Create articles dir if not exists
+          # Create articles directory if it doesn't exist
           mkdir -p articles
+
+          # Fetch list of your Gists (up to 100)
+          gh gist list --limit 100 > gists.txt
 
           # Process each Gist
           while IFS=$'\t' read -r ID DESC FILENAME PUBLIC; do
             # Skip if not a .txt file
             [[ "$FILENAME" != *.txt ]] && continue
 
-            # Skip if already exists in repo (optional: remove to always overwrite)
+            # Skip if already exists in repo (optional: remove this block to always overwrite)
             if [ -f "articles/$FILENAME" ]; then
               echo "⏭️  Skipping existing file: $FILENAME"
               continue
@@ -47,11 +53,9 @@ jobs:
             echo "📥 Fetching Gist: $FILENAME (ID: $ID)"
             gh gist view "$ID" --filename "$FILENAME" > "articles/$FILENAME"
 
-            # Optional: add frontmatter or metadata here if needed
-
           done < gists.txt
 
-          # Check if any new files were added
+          # Commit and push new files
           if ! git diff --quiet --exit-code; then
             git config --global user.name "github-actions[bot]"
             git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
