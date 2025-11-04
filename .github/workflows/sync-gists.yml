@@ -6,7 +6,7 @@ on:
   workflow_dispatch:     # Allows manual trigger
 
 permissions:
-  contents: write  # 🔑 REQUIRED to commit and push files
+  contents: write  # Required to push files
 
 jobs:
   sync-gists:
@@ -22,35 +22,32 @@ jobs:
 
       - name: Sync Private Gists
         env:
-          GITHUB_TOKEN: ${{ secrets.GIST_SYNC_TOKEN }}
+          GIST_TOKEN: ${{ secrets.GIST_SYNC_TOKEN }}  # 👈 renamed variable
         run: |
           # Install GitHub CLI and jq
-          sudo apt update
+          sudo apt update -qq
           sudo apt install -y gh jq
 
-          # Authenticate gh CLI
-          echo "${GITHUB_TOKEN}" | gh auth login --with-token
+          # Authenticate gh CLI manually
+          echo "${GIST_TOKEN}" | gh auth login --with-token
 
-          # Create articles directory if it doesn't exist
+          # Create directory if not exists
           mkdir -p articles
 
-          # Fetch ONLY private (secret) gists using JSON output
+          # Fetch ONLY private gists using JSON output
           echo "🔍 Fetching private gists..."
           gh gist list --secret --limit 100 --json id,files,public -q '.[] | [.id, (.files[].name), .public] | @tsv' > gists.txt
 
-          # Process each gist
+          # Process each Gist
           while IFS=$'\t' read -r ID FILENAME PUBLIC; do
-            [[ "$FILENAME" != *.txt ]] && continue  # Only sync .txt files
-
+            [[ "$FILENAME" != *.txt ]] && continue
             echo "📥 Fetching Gist: $FILENAME (ID: $ID)"
             gh gist view "$ID" --filename "$FILENAME" > "articles/$FILENAME"
           done < gists.txt
 
-          # Configure git
+          # Commit and push updates
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Add and commit if changes exist
           git add articles/
           if ! git diff --cached --quiet --exit-code; then
             git commit -m "chore: auto-sync private Gists to repo"
