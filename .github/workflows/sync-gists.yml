@@ -1,0 +1,64 @@
+name: Sync Private Gists to Repo
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Runs daily at 02:00 UTC
+  workflow_dispatch:     # Allows manual trigger
+
+jobs:
+  sync-gists:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Sync Gists
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIST_SYNC_TOKEN }}
+        run: |
+          # Install dependencies
+          npm install -g gh
+
+          # Authenticate gh CLI
+          echo "${GITHUB_TOKEN}" | gh auth login --with-token
+
+          # Fetch list of your public & secret Gists (up to 100)
+          gh gist list --limit 100 > gists.txt
+
+          # Create articles dir if not exists
+          mkdir -p articles
+
+          # Process each Gist
+          while IFS=$'\t' read -r ID DESC FILENAME PUBLIC; do
+            # Skip if not a .txt file
+            [[ "$FILENAME" != *.txt ]] && continue
+
+            # Skip if already exists in repo (optional: remove to always overwrite)
+            if [ -f "articles/$FILENAME" ]; then
+              echo "⏭️  Skipping existing file: $FILENAME"
+              continue
+            fi
+
+            echo "📥 Fetching Gist: $FILENAME (ID: $ID)"
+            gh gist view "$ID" --filename "$FILENAME" > "articles/$FILENAME"
+
+            # Optional: add frontmatter or metadata here if needed
+
+          done < gists.txt
+
+          # Check if any new files were added
+          if ! git diff --quiet --exit-code; then
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add articles/
+            git commit -m "chore: auto-import new Gists from Tampermonkey script"
+            git push
+            echo "✅ Pushed new Gist(s) to repo."
+          else
+            echo "⏩ No new Gists to import."
+          fi
